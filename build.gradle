@@ -1,0 +1,37 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.hoddmimes'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+jar {
+    destinationDirectory.set(file("$rootDir/"))
+    duplicatesStrategy(DuplicatesStrategy.EXCLUDE)
+    manifest {
+        attributes('Main-Class': 'IPScan')
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    archiveBaseName = 'ipscan'
+    archiveVersion = '1.0'
+    doLast {
+
+    }
+}
+
+
+dependencies {
+    implementation group: 'com.google.code.gson', name: 'gson', version: '2.11.0'
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
