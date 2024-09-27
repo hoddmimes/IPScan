@@ -1,6 +1,7 @@
 # IPScan
 
 A program for scanning a subnet class C 0-255.
+Been tested on Linux and Mac OS
 
 ![ipscan](IPScan.png "IPScan")
 
