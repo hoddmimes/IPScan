@@ -4,18 +4,22 @@ import table.ModelRenderCallback;
 import table.Table;
 import table.TableCallbackInterface;
 import table.TableModel;
+import java.net.InetAddress;
 
 import javax.swing.*;
 import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.HashMap;
-import java.util.concurrent.RunnableFuture;
+
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.swing.border.EmptyBorder;
@@ -26,9 +30,11 @@ import javax.swing.border.EmptyBorder;
  */
 public class IPScan  extends JFrame implements TableCallbackInterface, ModelRenderCallback {
     Pattern ADDR_PATTERN = Pattern.compile("(\\d+)\\.(\\d+)\\.(\\d+)\\.(\\d+)");
-    Pattern MAC_ADDRESS = Pattern.compile("([^ ]+).+(([[0-9A-Fa-f]]{2}[:.-]?){5}[[0-9A-Fa-f]]{2})");
+    Pattern MAC_MAC_ADDRESS = Pattern.compile("([^ ]+) \\((\\d+\\.\\d+\\.\\d+\\.\\d+)\\) at (([0-9A-Fa-f]{1,2}[:.]?){5}[0-9A-Fa-f]{1,2})");
+    Pattern LINUX_MAC_ADDRESS = Pattern.compile("([^ ]+).+(([[0-9A-Fa-f]]{2}[:.-]?){5}[[0-9A-Fa-f]]{2})");
     LocalInterfaces mLocalInterfaces;
     Caches          mCaches;
+    int mReadTimeout = 150; // milliseconds
 
     // Swing variables
     JTextField jNetworkTxtFld;
@@ -38,6 +44,7 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
     JButton jRescanButton;
     TableModel<HostEntry> mTableModel;
     Table mTable;
+
 
 
 
@@ -249,6 +256,18 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         jRescanButton.setEnabled( true );
     }
 
+    private String fillMacAddr( String pMac ) {
+        StringBuffer sb = new StringBuffer();
+        String arr[] = pMac.split(":");
+        for( String a : arr ) {
+            if (a.length() == 1) {
+                sb.append("0");
+            }
+            sb.append(a + ":");
+        }
+        String str= sb.substring(0, sb.length() -  1);
+        return str;
+    }
     private String validateStartingAddress( String pAddress) {
         Pattern tAddressPattern = Pattern.compile("^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])(\\.(?!$)|$)){4}$");
         Matcher m = tAddressPattern.matcher( pAddress );
@@ -290,6 +309,7 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         String s;
         Process p;
         String tMacAddr = null;
+        boolean tMacOs = System.getProperty("os.name").startsWith("Mac");
 
         // Is the mac in the cache?
         if (mCaches.mMacAddresses.containsKey( pEntry.getIpAddress())) {
@@ -311,13 +331,23 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
             BufferedReader br = new BufferedReader(
                     new InputStreamReader(p.getInputStream()));
             while ((s = br.readLine()) != null) {
-                Matcher m = MAC_ADDRESS.matcher(s);
+                Matcher m = tMacOs ? MAC_MAC_ADDRESS.matcher(s) : LINUX_MAC_ADDRESS.matcher(s);
                 if (m.find()) {
                     tFound= true;
-                    pEntry.setMacAddress(m.group(2));
-                    mCaches.mMacAddresses.put(pEntry.getIpAddress(), m.group(2));
-                    mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(1));
-                  break;
+                    if (tMacOs) {
+                        pEntry.setMacAddress(fillMacAddr(m.group(3)));
+                        mCaches.mMacAddresses.put(pEntry.getIpAddress(), fillMacAddr(m.group(3)));
+                        if (!m.group(1).contentEquals("?")) {
+                            mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(1));
+                        } else {
+                            mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(2));
+                        }
+                    } else {
+                        pEntry.setMacAddress(m.group(2));
+                        mCaches.mMacAddresses.put(pEntry.getIpAddress(), fillMacAddr(m.group(2)));
+                        mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(1));
+                    }
+                    break;
                 }
             }
 
@@ -331,24 +361,50 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         }
     }
 
+
+    private boolean timedReader(InputStream pInputStream, int pTimeout, String ... pSeachStrings) throws IOException
+    {
+        long tStartTime = System.currentTimeMillis();
+        int tLastLength = 0;
+
+        ByteBuffer bb = ByteBuffer.allocate(2048);
+        do {
+            while (pInputStream.available() > 0) {
+                int chr = pInputStream.read();
+                if (chr < 0) { //EOF ?
+                    return false; // failed to locate search string
+                }
+                bb.put((byte) (chr & 0xFF)); //save byte
+            }
+            if (tLastLength < bb.position()) { // have we new input?
+                tLastLength = bb.position(); // update last known position
+                String s = new String(Arrays.copyOfRange(bb.array(), 0, bb.position()));
+                for( String ss : pSeachStrings) {
+                    if (s.indexOf(ss) >= 0) {
+                        return true;
+                    }
+                }
+            }
+            try { Thread.sleep(20L); } catch (InterruptedException ie) {}
+        } while ( (System.currentTimeMillis() - tStartTime) < pTimeout);
+
+        return false;
+    }
+
     private boolean ping(String pIpAddress) {
         String s;
         Process p;
         boolean found = false;
+        boolean  tMacOs = System.getProperty("os.name").startsWith("Mac");
 
 
         try {
-            p = Runtime.getRuntime().exec("ping -4 -c 1 -W 0.1  " + pIpAddress);
-            BufferedReader br = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()));
-            while ((s = br.readLine()) != null) {
-                if (s.indexOf("bytes from " + pIpAddress) > 0) {
-                    found = true;
-                    break;
-                }
-            }
-
-            p.waitFor();
+            String cmd = tMacOs ? "ping -n -c 1 -W 0.2 " : "ping -4 -n -c 1 -W 0.2 ";
+            p = Runtime.getRuntime().exec(cmd + pIpAddress);
+            found = timedReader( p.getInputStream(), mReadTimeout,
+                    ("bytes from " + pIpAddress),
+                    "1 packets received");
+            //p.waitFor();
             //System.out.println ("exit: " + p.exitValue());
             p.destroy();
             return found;
@@ -357,33 +413,29 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         }
     }
 
-    void getIpName( HostEntry pEntry ) {
+    private String reversedDNSLookup( String pIpAddress ) {
         try {
-            if (mCaches.mIpCustomNames.containsKey( pEntry.getIpAddress())) {
-                pEntry.setIpName( mCaches.mIpCustomNames.get( pEntry.getIpAddress()));
-                return;
-            }
-
-            if (mCaches.mIpNames.containsKey( pEntry.getIpAddress())) {
-                pEntry.setIpName( mCaches.mIpNames.get( pEntry.getIpAddress()));
-                return;
-            }
-
-            // Get InetAddress object for the provided IP address
-            InetAddress inetAddress = InetAddress.getByName(pEntry.getIpAddress());
-
-            // Get the hostname from the InetAddress object
-            String hostname = inetAddress.getHostName();
-            if (!hostname.contentEquals(pEntry.getIpAddress())) {
-                pEntry.setIpName(hostname);
-                mCaches.mIpNames.put( pEntry.getIpName(), hostname);
-                return;
-            }
-
-        } catch (UnknownHostException e) {
-            // Handle exception when the IP address cannot be resolved
-            pEntry.setIpName(pEntry.getIpAddress());
+            InetAddress ia =  InetAddress.getByName(pIpAddress);
+            return ia.getCanonicalHostName();
         }
+        catch(Exception e) {
+            System.out.println("DNS exception: " + e.getMessage());
+            return pIpAddress;
+        }
+    }
+    void getIpName( HostEntry pEntry ) {
+        if (mCaches.mIpCustomNames.containsKey( pEntry.getIpAddress())) {
+            pEntry.setIpName( mCaches.mIpCustomNames.get( pEntry.getIpAddress()));
+            return;
+        }
+
+        if (mCaches.mIpNames.containsKey( pEntry.getIpAddress())) {
+            pEntry.setIpName( mCaches.mIpNames.get( pEntry.getIpAddress()));
+            return;
+        }
+
+        String tHostName = reversedDNSLookup(pEntry.getIpAddress());
+        mCaches.mIpNames.put( pEntry.getIpName(), tHostName);
     }
 
     void macToManfacture( HostEntry pEntry ) {
@@ -440,6 +492,7 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         try {
             URL url = new URL("http://" + pIpAddress);
             HttpURLConnection huc = (HttpURLConnection) url.openConnection();
+            huc.setConnectTimeout(500);
             int responseCode = huc.getResponseCode();
             if (responseCode != 404) {
                 return true;
@@ -463,7 +516,9 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
             System.out.println( ex.getMessage());
         }
 
+
         IPScan thisClass = new IPScan();
+        thisClass.parseParameters( args);
         thisClass.mCaches = new Caches();
         thisClass.mLocalInterfaces = new LocalInterfaces();
         thisClass.jNetworkTxtFld.setText( thisClass.mLocalInterfaces.getLocalSubNet() );
@@ -472,6 +527,17 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         thisClass.setVisible(true);
         thisClass.jRescanButton.setEnabled(false);
         thisClass.scan(  thisClass.mLocalInterfaces.getLocalSubNet());
+    }
+
+    private void parseParameters( String [] args ) {
+        int i = 0;
+        while( i < args.length){
+            if (args[i].equalsIgnoreCase("-timeout")) {
+                mReadTimeout = Integer.parseInt(args[i+1]);
+                i++;
+            }
+            i++;
+        }
     }
 
     public class RunableRescan implements Runnable{
@@ -522,6 +588,3 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         }
     }
 }
-
-
-
