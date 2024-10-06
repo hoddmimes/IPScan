@@ -338,14 +338,14 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
                         pEntry.setMacAddress(fillMacAddr(m.group(3)));
                         mCaches.mMacAddresses.put(pEntry.getIpAddress(), fillMacAddr(m.group(3)));
                         if (!m.group(1).contentEquals("?")) {
-                            mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(1));
+                            mCaches.mIpNames.put(pEntry.getMacAddress(), m.group(1));
                         } else {
-                            mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(2));
+                            mCaches.mIpNames.put(pEntry.getMacAddress(), m.group(2));
                         }
                     } else {
                         pEntry.setMacAddress(m.group(2));
                         mCaches.mMacAddresses.put(pEntry.getIpAddress(), fillMacAddr(m.group(2)));
-                        mCaches.mIpNames.put(pEntry.getIpAddress(), m.group(1));
+                        mCaches.mIpNames.put(pEntry.getMacAddress(), m.group(1));
                     }
                     break;
                 }
@@ -429,13 +429,13 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
             return;
         }
 
-        if (mCaches.mIpNames.containsKey( pEntry.getIpAddress())) {
-            pEntry.setIpName( mCaches.mIpNames.get( pEntry.getIpAddress()));
+        if (mCaches.mIpNames.containsKey( pEntry.getMacAddress())) {
+            pEntry.setIpName( mCaches.mIpNames.get( pEntry.getMacAddress()));
             return;
         }
 
         String tHostName = reversedDNSLookup(pEntry.getIpAddress());
-        mCaches.mIpNames.put( pEntry.getIpName(), tHostName);
+        mCaches.mIpNames.put( pEntry.getMacAddress(), tHostName);
     }
 
     void macToManfacture( HostEntry pEntry ) {

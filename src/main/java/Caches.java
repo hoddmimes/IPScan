@@ -49,7 +49,7 @@ public class Caches {
             JsonArray jIpName = jCache.get("ip_names").getAsJsonArray();
             for (int i = 0; i < jIpName.size(); i++) {
                 JsonObject jName = jIpName.get(i).getAsJsonObject();
-                mIpNames.put( jName.get("ip").getAsString(), jName.get("name").getAsString());
+                mIpNames.put( jName.get("mac").getAsString(), jName.get("name").getAsString());
             }
 
             // Load known custom IP names
@@ -89,7 +89,7 @@ public class Caches {
         JsonArray jNameArray = new JsonArray();
         for (Map.Entry<String,String> e : mIpNames.entrySet()) {
             JsonObject jName = new JsonObject();
-            jName.addProperty("ip", e.getKey());
+            jName.addProperty("mac", e.getKey());
             jName.addProperty("name", e.getValue());
             jNameArray.add(jName);
         }
