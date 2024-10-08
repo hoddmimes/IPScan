@@ -19,7 +19,7 @@ jar {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     }
     archiveBaseName = 'ipscan'
-    archiveVersion = '1.2'
+    archiveVersion = '1.3'
     doLast {
 
     }

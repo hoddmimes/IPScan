@@ -17,5 +17,5 @@ Been tested on Linux and Mac OS
 ### How to Run
 
 ```
-$ java -jar ipscan.1.2.jar
+$ java -jar ipscan.1.3.jar
 ``` 

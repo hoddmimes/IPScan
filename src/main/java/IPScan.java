@@ -166,7 +166,17 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
             public void actionPerformed(ActionEvent e) {
                 mTableModel.clear();
                 jRescanButton.setEnabled(false);
-                SwingUtilities.invokeLater( new RunableRescan( IPScan.this ));
+
+                String tIpAddressCalibrated = validateStartingAddress( jNetworkTxtFld.getText());
+                if (tIpAddressCalibrated == null) {
+                    JOptionPane.showMessageDialog(IPScan.this,
+                            "Invalid IP address \"" + jNetworkTxtFld.getText() + "\"",
+                            "Invalid IP Address",
+                            JOptionPane.WARNING_MESSAGE);
+                    jRescanButton.setEnabled( true );
+                    return;
+                }
+                SwingUtilities.invokeLater( new RunableRescan( 0,5, ipStringToInt(tIpAddressCalibrated), IPScan.this ));
             }
         });
         jButtonPanel.add( jRescanButton );
@@ -206,36 +216,15 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         return jPanel;
     }
 
-    private void execute() {
-        mLocalInterfaces = new LocalInterfaces();
-        mCaches = new Caches();
-
-        while (true) {
-            scan(mLocalInterfaces.getLocalSubNet());
-            try {
-                Thread.sleep(15000);
-            } catch (InterruptedException e) {
-            }
-        }
-    }
 
 
 
-    void scan(String pIpNetStartAddress ) {
-        //jRescanButton.setEnabled( false );
-        String tIpAddressCalibrated = validateStartingAddress( pIpNetStartAddress);
-        if (tIpAddressCalibrated == null) {
-            JOptionPane.showMessageDialog(this,
-                    "Invalid IP address \"" + pIpNetStartAddress + "\"",
-                    "Invalid IP Address",
-                    JOptionPane.WARNING_MESSAGE);
-            jRescanButton.setEnabled( true );
-            return;
-        }
 
-        long ipAddr = ipStringToInt(tIpAddressCalibrated);
-        for (int i = 0; i < 255; i++) {
-            String s = longToIpString(ipAddr + i);
+    void scan(int pOffset, int pBatchSize, long pBinIpStartAddress ) {
+
+        int i = pOffset;
+        while ((i < 255) && (i < (pOffset + pBatchSize))) {
+            String s = longToIpString(pBinIpStartAddress + i);
             if (ping(s)) {
                 HostEntry tEntry = new HostEntry(s);
                 tEntry.setHasHttp( checkHttp(s));
@@ -251,9 +240,14 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
                 mTableModel.addEntry( tEntry );
                 System.out.println(tEntry);
             }
+            i++;
         }
-        mCaches.saveCaches();
-        jRescanButton.setEnabled( true );
+        if (i == 255) {
+            mCaches.saveCaches();
+            jRescanButton.setEnabled(true);
+        } else {
+            SwingUtilities.invokeLater( new RunableRescan( i, pBatchSize, pBinIpStartAddress, this ));
+        }
     }
 
     private String fillMacAddr( String pMac ) {
@@ -526,7 +520,20 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
         thisClass.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         thisClass.setVisible(true);
         thisClass.jRescanButton.setEnabled(false);
-        thisClass.scan(  thisClass.mLocalInterfaces.getLocalSubNet());
+
+
+        String tIpAddressCalibrated = thisClass.validateStartingAddress( thisClass.jNetworkTxtFld.getText());
+        if (tIpAddressCalibrated == null) {
+            JOptionPane.showMessageDialog(thisClass,
+                    "Invalid IP address \"" + thisClass.jNetworkTxtFld.getText() + "\"",
+                    "Invalid IP Address",
+                    JOptionPane.WARNING_MESSAGE);
+            thisClass.jRescanButton.setEnabled( true );
+            return;
+        }
+
+
+        thisClass.scan(0,255, thisClass.ipStringToInt(tIpAddressCalibrated));
     }
 
     private void parseParameters( String [] args ) {
@@ -542,13 +549,19 @@ public class IPScan  extends JFrame implements TableCallbackInterface, ModelRend
 
     public class RunableRescan implements Runnable{
         IPScan mScanner;
+        int mOffset;
+        int mBatchSize;
+        long mBinStartAddress;
 
-        public RunableRescan( IPScan pScanner) {
+        public RunableRescan( int pOffset, int pBatchSize, long pBinStartAddress,  IPScan pScanner) {
             mScanner = pScanner;
+            mOffset = pOffset;
+            mBatchSize = pBatchSize;
+            mBinStartAddress = pBinStartAddress;
         }
 
         public void run() {
-            mScanner.scan( mScanner.jNetworkTxtFld.getText());
+            mScanner.scan( mOffset, mBatchSize, mBinStartAddress );
         }
     }
 
